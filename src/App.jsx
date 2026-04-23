@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 
-const STORAGE_KEY = 'gpt2img_cfg_v1'
+const STORAGE_KEY = 'gpt2img_cfg_v3'
+const DEFAULT_BASE_URL = 'https://api.pubwhere.cn'
 
 const SIZES = [
   { value: '1024x1024', label: '1:1 方形 · 1024×1024' },
@@ -22,7 +23,7 @@ function loadCfg() {
 
 export default function App() {
   const cfg = loadCfg()
-  const [baseUrl, setBaseUrl] = useState(cfg.baseUrl || '/api')
+  const [baseUrl, setBaseUrl] = useState(cfg.baseUrl || DEFAULT_BASE_URL)
   const [apiKey, setApiKey] = useState(cfg.apiKey || '')
   const [model, setModel] = useState(cfg.model || 'gpt-image-2')
   const [size, setSize] = useState(cfg.size || '1024x1024')
@@ -88,7 +89,7 @@ export default function App() {
       setImages((prev) => [...newImgs, ...prev])
       setStatus({ msg: `已生成 ${newImgs.length} 张`, err: false })
     } catch (e) {
-      setStatus({ msg: `请求失败(可能是 CORS 或网络):${e.message}`, err: true })
+      setStatus({ msg: `请求失败:${e.message}`, err: true })
     } finally {
       setBusy(false)
     }
@@ -108,13 +109,13 @@ export default function App() {
       <section className="panel">
         <div className="row">
           <div className="field">
-            <label htmlFor="baseUrl">Base URL <span style={{textTransform:'none',letterSpacing:0,fontWeight:400,opacity:.7}}>(/api 走 Vite 代理免 CORS)</span></label>
+            <label htmlFor="baseUrl">Base URL</label>
             <input
               id="baseUrl"
               type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="/api 或 https://crs.happycode.online"
+              placeholder="https://api.pubwhere.cn"
             />
           </div>
           <div className="field">
@@ -176,19 +177,6 @@ export default function App() {
             <span>{status.msg}</span>
           </div>
         </div>
-
-        <details>
-          <summary>CORS 被浏览器拦截怎么办?</summary>
-          <div className="hint">
-            某些网关未放开浏览器跨域,控制台会报 <code>CORS</code> 错误。两种办法:
-            <br />
-            ① 启动一个临时无跨域限制的 Chrome:
-            <br />
-            <code>chrome.exe --disable-web-security --user-data-dir=C:\tmp\chrome-dev</code>
-            <br />
-            ② 或安装 Chrome 扩展 <b>“CORS Unblock”</b> / <b>“Allow CORS”</b> 并启用。
-          </div>
-        </details>
       </section>
 
       <section className="grid">
