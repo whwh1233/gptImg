@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import { checkForbidden } from './moderation'
 
 const STORAGE_KEY = 'gpt2img_cfg_v3'
 const DEFAULT_BASE_URL = 'https://api.pubwhere.cn'
@@ -47,6 +48,14 @@ export default function App() {
     if (!url) return setStatus({ msg: '请填写 Base URL', err: true })
     if (!key) return setStatus({ msg: '请填写 API Key', err: true })
     if (!p) return setStatus({ msg: '请填写提示词', err: true })
+
+    const hit = checkForbidden(p)
+    if (hit) {
+      return setStatus({
+        msg: `已拒绝:提示词包含${hit.label}相关内容(命中"${hit.keyword}"),请修改后重试`,
+        err: true,
+      })
+    }
 
     setBusy(true)
     setStatus({ msg: '正在生成,通常需要 10–60 秒…', err: false })
