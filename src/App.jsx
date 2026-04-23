@@ -49,10 +49,9 @@ export default function App() {
     if (!key) return setStatus({ msg: '请填写 API Key', err: true })
     if (!p) return setStatus({ msg: '请填写提示词', err: true })
 
-    const hit = checkForbidden(p)
-    if (hit) {
+    if (checkForbidden(p)) {
       return setStatus({
-        msg: `已拒绝:提示词包含${hit.label}相关内容(命中"${hit.keyword}"),请修改后重试`,
+        msg: '提示词不符合使用规范,已拒绝生成',
         err: true,
       })
     }
