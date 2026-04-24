@@ -125,6 +125,50 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+.card .card-del {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(44, 43, 39, .55);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity .15s, background .15s;
+  font-family: inherit;
+}
+.card:hover .card-del { opacity: 1; }
+.card .card-del:hover { background: var(--danger); }
+.card .card-del:focus-visible { opacity: 1; outline: 2px solid var(--accent); }
+
+.size-preview {
+  background: #fbfaf6;
+  border: 1px dashed var(--border-strong);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.gallery-notice {
+  margin-top: 22px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-left: 3px solid var(--border-strong);
+  background: transparent;
+  line-height: 1.5;
 }
 .card img { width: 100%; height: auto; display: block; background: #f0ede2; }
 .card .meta {
