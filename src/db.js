@@ -1,7 +1,8 @@
 const DB_NAME = 'gpt2img'
 const STORE = 'images'
 const VERSION = 1
-export const MAX_IMAGES = 10
+export const MAX_IMAGES = 60
+export const MAX_TOTAL_BYTES = 400 * 1024 * 1024
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -32,9 +33,24 @@ export async function listImages() {
   })
 }
 
-export async function addImage({ blob, prompt, size, model }) {
+export async function addImage({
+  blob,
+  prompt,
+  size,
+  model,
+  kind = 'generate',
+  originBlob = null,
+}) {
   const db = await openDB()
-  const record = { blob, prompt, size, model, createdAt: Date.now() }
+  const record = {
+    blob,
+    prompt,
+    size,
+    model,
+    kind,
+    originBlob,
+    createdAt: Date.now(),
+  }
   const id = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
     const req = tx.objectStore(STORE).add(record)
@@ -55,11 +71,29 @@ export async function deleteImage(id) {
   })
 }
 
+function bytesOf(rec) {
+  return (rec.blob?.size || 0) + (rec.originBlob?.size || 0)
+}
+
 async function enforceLimit() {
+  let all = await listImages()
+  if (all.length > MAX_IMAGES) {
+    const extras = all.slice(MAX_IMAGES)
+    for (const rec of extras) await deleteImage(rec.id)
+    all = all.slice(0, MAX_IMAGES)
+  }
+  let total = all.reduce((s, r) => s + bytesOf(r), 0)
+  if (total <= MAX_TOTAL_BYTES) return
+  for (let i = all.length - 1; i >= 0 && total > MAX_TOTAL_BYTES; i--) {
+    total -= bytesOf(all[i])
+    await deleteImage(all[i].id)
+  }
+}
+
+export async function storageStats() {
   const all = await listImages()
-  if (all.length <= MAX_IMAGES) return
-  const extras = all.slice(MAX_IMAGES)
-  for (const rec of extras) await deleteImage(rec.id)
+  const bytes = all.reduce((s, r) => s + bytesOf(r), 0)
+  return { count: all.length, bytes }
 }
 
 export function b64ToBlob(b64, mime = 'image/png') {
