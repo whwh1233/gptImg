@@ -1014,13 +1014,12 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   grid-template-areas:
-    "time time"
-    "prompt actions";
-  column-gap: 8px;
-  row-gap: 6px;
-  align-items: center;
+    "time"
+    "prompt"
+    "actions";
+  row-gap: 8px;
   font-size: 12px;
 }
 .card .meta .meta-time { grid-area: time; }
@@ -1034,17 +1033,20 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 .card .meta a:hover { text-decoration: underline; }
 .card .meta .prompt-hint {
   color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  flex: 1;
+  word-break: break-word;
+  line-height: 1.45;
   min-width: 0;
 }
 .card .meta-actions {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  flex: none;
+  justify-content: flex-end;
 }
 .card .meta-btn {
   display: inline-flex;

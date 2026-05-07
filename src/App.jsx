@@ -126,44 +126,52 @@ const STORAGE_KEY = 'gpt2img_cfg_v4'
 const DEFAULT_BASE_URL = 'https://api.pubwhere.cn'
 const DEFAULT_API_KEY = import.meta.env.VITE_DEFAULT_API_KEY || ''
 
-const RATIOS = [
-  { value: '1:1', label: '1:1 方形',     sizes: { '1k': [1280, 1280], '2k': [2048, 2048], '4k': [2880, 2880] } },
-  { value: '3:2', label: '3:2 横向',     sizes: { '1k': [1280, 848],  '2k': [2048, 1360], '4k': [3520, 2336] } },
-  { value: '2:3', label: '2:3 竖向',     sizes: { '1k': [848, 1280],  '2k': [1360, 2048], '4k': [2336, 3520] } },
-  { value: '4:3', label: '4:3 横向',     sizes: { '1k': [1280, 960],  '2k': [2048, 1536], '4k': [3312, 2480] } },
-  { value: '3:4', label: '3:4 竖向',     sizes: { '1k': [960, 1280],  '2k': [1536, 2048], '4k': [2480, 3312] } },
-  { value: '5:4', label: '5:4 横向',     sizes: { '1k': [1280, 1024], '2k': [2048, 1632], '4k': [3216, 2560] } },
-  { value: '4:5', label: '4:5 竖向',     sizes: { '1k': [1024, 1280], '2k': [1632, 2048], '4k': [2560, 3216] } },
-  { value: '16:9', label: '16:9 宽屏',   sizes: { '1k': [1280, 720],  '2k': [2048, 1152], '4k': [3840, 2160] } },
-  { value: '9:16', label: '9:16 竖屏',   sizes: { '1k': [720, 1280],  '2k': [1152, 2048], '4k': [2160, 3840] } },
-  { value: '21:9', label: '21:9 超宽',   sizes: { '1k': [1280, 544],  '2k': [2048, 864],  '4k': [3840, 1632] } },
-]
-
 const DEV = import.meta.env.DEV
 
-const QUALITIES = [
-  { value: '1k', label: '1K', devNote: '长边 1280' },
-  { value: '2k', label: '2K', devNote: '长边 2048,推荐' },
-  { value: '4k', label: '4K', devNote: '长边 3840,实验性' },
+const IMAGE_SIZES = [
+  { value: 'auto', label: 'auto（默认）' },
+  { value: '1024x1024', label: '1024×1024（正方形）' },
+  { value: '1536x1024', label: '1536×1024（横向）' },
+  { value: '1024x1536', label: '1024×1536（竖向）' },
+  { value: '2048x2048', label: '2048×2048（2K 方形）' },
+  { value: '2048x1152', label: '2048×1152（2K 横屏）' },
+  { value: '3840x2160', label: '3840×2160（4K 横屏）' },
+  { value: '2160x3840', label: '2160×3840（4K 竖屏）' },
 ]
 
-function computeSize(ratio, quality) {
-  const r = RATIOS.find((x) => x.value === ratio) || RATIOS[0]
-  const q = QUALITIES.find((x) => x.value === quality) || QUALITIES[0]
-  const [w, h] = r.sizes[q.value] || r.sizes['2k']
-  return `${w}x${h}`
+const IMAGE_QUALITIES = [
+  { value: 'auto', label: 'auto（默认）' },
+  { value: 'low', label: 'low（快速草稿）' },
+  { value: 'medium', label: 'medium' },
+  { value: 'high', label: 'high' },
+]
+
+function normalizeSize(size) {
+  if (IMAGE_SIZES.some((x) => x.value === size)) return size
+  return 'auto'
 }
 
-function buildSizeHint(ratio, size) {
-  const [a, b] = ratio.split(':').map(Number)
-  let orient = 'square'
-  if (a > b) orient = 'horizontal landscape'
-  else if (a < b) orient = 'vertical portrait'
+function normalizeQuality(quality) {
+  if (IMAGE_QUALITIES.some((x) => x.value === quality)) return quality
+  return 'auto'
+}
+
+function sizeAspectRatio(size) {
+  const m = String(size || '').match(/^(\d+)x(\d+)$/)
+  if (!m) return null
+  return `${Number(m[1])} / ${Number(m[2])}`
+}
+
+function buildSizePromptHint(size) {
+  const m = String(size || '').match(/^(\d+)x(\d+)$/)
+  if (!m) return ''
+  const w = Number(m[1])
+  const h = Number(m[2])
+  const orientation = w === h ? 'square' : w > h ? 'landscape' : 'portrait'
   return (
-    `\n\n[Output requirements] Generate the image in ${orient} orientation, ` +
-    `aspect ratio ${ratio} (target dimensions ${size} pixels). ` +
-    `The composition MUST fill this frame; do not output a square or any other aspect ratio. ` +
-    `严格按 ${ratio} 比例输出，不要输出方图或其他比例。`
+    `\n\n[Output requirements] Generate a ${orientation} image at ${w}x${h} pixels. ` +
+    `The final image MUST use exactly ${w}x${h} dimensions and preserve this aspect ratio. ` +
+    `严格输出 ${w}x${h} 像素，不要改变方向、比例或尺寸。`
   )
 }
 
@@ -183,8 +191,8 @@ function nextSid() {
 function makeSession({
   name = '',
   mode = 'generate',
-  ratio = '1:1',
-  quality = '1k',
+  size = 'auto',
+  quality = 'auto',
   model = 'gpt-image-2',
 } = {}) {
   return {
@@ -192,7 +200,7 @@ function makeSession({
     name,
     mode,
     prompt: '',
-    ratio,
+    size,
     quality,
     model,
     editItems: [],
@@ -267,8 +275,8 @@ export default function App() {
   if (!initRef.current) {
     initRef.current = makeSession({
       name: '会话 1',
-      ratio: cfg.ratio || '1:1',
-      quality: cfg.quality || '1k',
+      size: normalizeSize(cfg.size),
+      quality: normalizeQuality(cfg.quality),
       model: cfg.model || 'gpt-image-2',
     })
   }
@@ -351,11 +359,11 @@ export default function App() {
         baseUrl,
         apiKey,
         model: active?.model,
-        ratio: active?.ratio,
+        size: active?.size,
         quality: active?.quality,
       })
     )
-  }, [baseUrl, apiKey, active?.model, active?.ratio, active?.quality])
+  }, [baseUrl, apiKey, active?.model, active?.size, active?.quality])
 
   useEffect(() => {
     let mounted = true
@@ -435,8 +443,8 @@ export default function App() {
     const last = sessions[sessions.length - 1]
     const s = makeSession({
       name: `会话 ${sessions.length + 1}`,
-      ratio: last?.ratio || '1:1',
-      quality: last?.quality || '1k',
+      size: last?.size || 'auto',
+      quality: last?.quality || 'auto',
       model: last?.model || 'gpt-image-2',
     })
     setSessions((prev) => [...prev, s])
@@ -450,7 +458,7 @@ export default function App() {
       if (prev.length <= 1) {
         const fresh = makeSession({
           name: '会话 1',
-          ratio: target?.ratio,
+          size: target?.size,
           quality: target?.quality,
           model: target?.model,
         })
@@ -550,7 +558,10 @@ export default function App() {
     if (!resp.ok) {
       const detail =
         data?.error?.message || data?.message || data?.code || text.slice(0, 200)
-      const hint = qualityUsed === '4k' ? '（若为尺寸问题,请尝试 2K/1K）' : ''
+      const hint =
+        size && size !== 'auto' && qualityUsed !== 'low'
+          ? '（若为尺寸/质量问题,请尝试 auto 或 low）'
+          : ''
       const msg = `HTTP ${resp.status}: ${detail}${hint}`
       setSessionStatus(sid, { msg, err: true })
       return { count: 0, errorMsg: msg }
@@ -573,7 +584,7 @@ export default function App() {
     const durationMs = startedAt != null ? Date.now() - startedAt : null
     for (const blob of blobs) {
       const actual = await readBlobSize(blob)
-      if (actual && size && `${actual.w}x${actual.h}` !== size) {
+      if (actual && size && size !== 'auto' && `${actual.w}x${actual.h}` !== size) {
         console.warn(
           `[size-mismatch] kind=${kind} requested=${size} actual=${actual.w}x${actual.h}`
         )
@@ -615,14 +626,15 @@ export default function App() {
       }
     }
 
-    const size = computeSize(s.ratio, s.quality)
+    const size = normalizeSize(s.size)
     const modelUsed = s.model
-    const qualityUsed = s.quality
+    const qualityUsed = normalizeQuality(s.quality)
+    const promptWithSize = p + buildSizePromptHint(size)
 
     setSessionStatus(sid, { msg: '已提交,生成中…', err: false })
     const controller = new AbortController()
     const pkey = pushPending(
-      { sid, kind: 'generate', prompt: p, label: '生成中', ratio: s.ratio },
+      { sid, kind: 'generate', prompt: p, label: '生成中', size },
       controller
     )
 
@@ -636,8 +648,9 @@ export default function App() {
         },
         body: JSON.stringify({
           model: modelUsed,
-          prompt: p + buildSizeHint(s.ratio, size),
+          prompt: promptWithSize,
           size,
+          quality: qualityUsed,
           n: 1,
         }),
         signal: controller.signal,
@@ -692,9 +705,10 @@ export default function App() {
       }
     }
 
-    const size = computeSize(s.ratio, s.quality)
+    const size = normalizeSize(s.size)
     const modelUsed = s.model
-    const qualityUsed = s.quality
+    const qualityUsed = normalizeQuality(s.quality)
+    const promptWithSize = p + buildSizePromptHint(size)
     const editFiles = s.editItems.map((it) => it.file)
     const primaryIdx = Math.min(s.primaryIdx, editFiles.length - 1)
     const maskFile = s.mask?.file || null
@@ -704,7 +718,7 @@ export default function App() {
     const previewUrl = originBlob ? URL.createObjectURL(originBlob) : null
     const controller = new AbortController()
     const pkey = pushPending(
-      { sid, kind: 'edit', prompt: p, label: '编辑中', previewUrl, ratio: s.ratio },
+      { sid, kind: 'edit', prompt: p, label: '编辑中', previewUrl, size },
       controller
     )
 
@@ -712,10 +726,10 @@ export default function App() {
     try {
       const fd = new FormData()
       fd.append('model', modelUsed)
-      fd.append('prompt', p + buildSizeHint(s.ratio, size))
+      fd.append('prompt', promptWithSize)
       fd.append('size', size)
+      fd.append('quality', qualityUsed)
       fd.append('n', '1')
-      fd.append('response_format', 'b64_json')
       for (const f of editFiles) fd.append('image', f, f.name)
       if (maskFile) fd.append('mask', maskFile, maskFile.name)
 
@@ -779,9 +793,10 @@ export default function App() {
       }
     }
 
-    const size = computeSize(s.ratio, s.quality)
+    const size = normalizeSize(s.size)
     const modelUsed = s.model
-    const qualityUsed = s.quality
+    const qualityUsed = normalizeQuality(s.quality)
+    const promptWithSize = p + buildSizePromptHint(size)
     const files = s.batchItems.map((it) => it.file)
 
     let success = 0
@@ -795,7 +810,7 @@ export default function App() {
         kind: 'batch',
         prompt: p,
         label: `批量 0/${files.length}`,
-        ratio: s.ratio,
+        size,
       },
       controller
     )
@@ -815,10 +830,10 @@ export default function App() {
       try {
         const fd = new FormData()
         fd.append('model', modelUsed)
-        fd.append('prompt', p + buildSizeHint(s.ratio, size))
+        fd.append('prompt', promptWithSize)
         fd.append('size', size)
+        fd.append('quality', qualityUsed)
         fd.append('n', '1')
-        fd.append('response_format', 'b64_json')
         fd.append('image', file, file.name)
 
         const resp = await fetch(`${url}/v1/images/edits`, {
@@ -888,16 +903,17 @@ export default function App() {
       }
     }
 
-    const size = computeSize(s.ratio, s.quality)
+    const size = normalizeSize(s.size)
     const modelUsed = s.model
-    const qualityUsed = s.quality
+    const qualityUsed = normalizeQuality(s.quality)
+    const promptWithSize = p + ASSET_FUSION_SUFFIX + buildSizePromptHint(size)
 
     setSessionStatus(sid, { msg: '已提交,生成中…', err: false })
     const firstImg = s.assetItems.find((it) => it.kind !== 'zip')
     const previewUrl = firstImg ? URL.createObjectURL(firstImg.file) : null
     const controller = new AbortController()
     const pkey = pushPending(
-      { sid, kind: 'asset-gen', prompt: p, label: '素材生图中', previewUrl, ratio: s.ratio },
+      { sid, kind: 'asset-gen', prompt: p, label: '素材生图中', previewUrl, size },
       controller
     )
 
@@ -923,10 +939,10 @@ export default function App() {
 
       const fd = new FormData()
       fd.append('model', modelUsed)
-      fd.append('prompt', p + ASSET_FUSION_SUFFIX + buildSizeHint(s.ratio, size))
+      fd.append('prompt', promptWithSize)
       fd.append('size', size)
+      fd.append('quality', qualityUsed)
       fd.append('n', '1')
-      fd.append('response_format', 'b64_json')
       for (const f of expanded) fd.append('image', f, f.name)
 
       const resp = await fetch(`${url}/v1/images/edits`, {
@@ -1329,7 +1345,6 @@ export default function App() {
     })
   }
 
-  const currentSize = active ? computeSize(active.ratio, active.quality) : ''
   const activeBusy = active ? isSessionBusy(active.id) : false
   const activePendingCount = active
     ? pending.filter((p) => p.sid === active.id && !p.failed).length
@@ -1841,29 +1856,29 @@ export default function App() {
 
         <div className="row">
           <div className="field">
-            <label htmlFor="ratio">比例</label>
+            <label htmlFor="size">尺寸</label>
             <select
-              id="ratio"
-              value={active.ratio}
-              onChange={(e) => updateActive({ ratio: e.target.value })}
+              id="size"
+              value={active.size}
+              onChange={(e) => updateActive({ size: e.target.value })}
             >
-              {RATIOS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
+              {IMAGE_SIZES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
                 </option>
               ))}
             </select>
           </div>
           <div className="field">
-            <label htmlFor="quality">清晰度</label>
+            <label htmlFor="quality">质量</label>
             <select
               id="quality"
               value={active.quality}
               onChange={(e) => updateActive({ quality: e.target.value })}
             >
-              {QUALITIES.map((q) => (
+              {IMAGE_QUALITIES.map((q) => (
                 <option key={q.value} value={q.value}>
-                  {DEV && q.devNote ? `${q.label} (${q.devNote})` : q.label}
+                  {q.label}
                 </option>
               ))}
             </select>
@@ -1880,12 +1895,6 @@ export default function App() {
               onChange={(e) => updateActive({ model: e.target.value })}
             />
           </div>
-          {DEV && (
-            <div className="field">
-              <label>最终尺寸 (dev)</label>
-              <div className="size-preview">{currentSize}</div>
-            </div>
-          )}
         </div>
 
         <div className="actions">
@@ -1995,8 +2004,8 @@ export default function App() {
                 <div
                   className="pending-stage"
                   style={
-                    p.ratio
-                      ? { aspectRatio: p.ratio.replace(':', ' / ') }
+                    sizeAspectRatio(p.size)
+                      ? { aspectRatio: sizeAspectRatio(p.size) }
                       : undefined
                   }
                 >
