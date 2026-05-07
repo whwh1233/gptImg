@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
-import { checkForbidden } from './moderation'
+import { findForbidden } from './moderation'
 import {
   MAX_IMAGES,
   MAX_TOTAL_BYTES,
@@ -13,6 +13,61 @@ import {
 
 function fmtMB(bytes) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function fmtBytes(b) {
+  if (b == null) return ''
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`
+  return `${(b / 1024 / 1024).toFixed(1)} MB`
+}
+
+function fmtTime(ts) {
+  if (!ts) return ''
+  const now = Date.now()
+  const diff = now - ts
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const today = new Date(now)
+  if (
+    d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
+  ) {
+    return `${hh}:${mm}`
+  }
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
+}
+
+function readBlobSize(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob)
+    const img = new Image()
+    img.onload = () => {
+      const r = { w: img.naturalWidth, h: img.naturalHeight }
+      URL.revokeObjectURL(url)
+      resolve(r)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    img.src = url
+  })
+}
+
+function fmtDuration(ms) {
+  if (ms == null) return ''
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const r = s % 60
+  if (m < 60) return r ? `${m}m ${r}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
 }
 
 function BeforeAfter({ originUrl, resultUrl, alt, onZoom }) {
@@ -72,23 +127,44 @@ const DEFAULT_BASE_URL = 'https://api.pubwhere.cn'
 const DEFAULT_API_KEY = import.meta.env.VITE_DEFAULT_API_KEY || ''
 
 const RATIOS = [
-  { value: '1:1', label: '1:1 方形', base: [1024, 1024] },
-  { value: '3:2', label: '3:2 横向', base: [1536, 1024] },
-  { value: '2:3', label: '2:3 竖向', base: [1024, 1536] },
-  { value: '16:9', label: '16:9 宽屏', base: [1792, 1024] },
-  { value: '9:16', label: '9:16 竖屏', base: [1024, 1792] },
+  { value: '1:1', label: '1:1 方形',     sizes: { '1k': [1280, 1280], '2k': [2048, 2048], '4k': [2880, 2880] } },
+  { value: '3:2', label: '3:2 横向',     sizes: { '1k': [1280, 848],  '2k': [2048, 1360], '4k': [3520, 2336] } },
+  { value: '2:3', label: '2:3 竖向',     sizes: { '1k': [848, 1280],  '2k': [1360, 2048], '4k': [2336, 3520] } },
+  { value: '4:3', label: '4:3 横向',     sizes: { '1k': [1280, 960],  '2k': [2048, 1536], '4k': [3312, 2480] } },
+  { value: '3:4', label: '3:4 竖向',     sizes: { '1k': [960, 1280],  '2k': [1536, 2048], '4k': [2480, 3312] } },
+  { value: '5:4', label: '5:4 横向',     sizes: { '1k': [1280, 1024], '2k': [2048, 1632], '4k': [3216, 2560] } },
+  { value: '4:5', label: '4:5 竖向',     sizes: { '1k': [1024, 1280], '2k': [1632, 2048], '4k': [2560, 3216] } },
+  { value: '16:9', label: '16:9 宽屏',   sizes: { '1k': [1280, 720],  '2k': [2048, 1152], '4k': [3840, 2160] } },
+  { value: '9:16', label: '9:16 竖屏',   sizes: { '1k': [720, 1280],  '2k': [1152, 2048], '4k': [2160, 3840] } },
+  { value: '21:9', label: '21:9 超宽',   sizes: { '1k': [1280, 544],  '2k': [2048, 864],  '4k': [3840, 1632] } },
 ]
 
+const DEV = import.meta.env.DEV
+
 const QUALITIES = [
-  { value: '1k', label: '1K', mul: 1 },
-  { value: '2k', label: '2K', mul: 2 },
-  { value: '4k', label: '4K (部分接口可能不支持)', mul: 4 },
+  { value: '1k', label: '1K', devNote: '长边 1280' },
+  { value: '2k', label: '2K', devNote: '长边 2048,推荐' },
+  { value: '4k', label: '4K', devNote: '长边 3840,实验性' },
 ]
 
 function computeSize(ratio, quality) {
   const r = RATIOS.find((x) => x.value === ratio) || RATIOS[0]
   const q = QUALITIES.find((x) => x.value === quality) || QUALITIES[0]
-  return `${r.base[0] * q.mul}x${r.base[1] * q.mul}`
+  const [w, h] = r.sizes[q.value] || r.sizes['2k']
+  return `${w}x${h}`
+}
+
+function buildSizeHint(ratio, size) {
+  const [a, b] = ratio.split(':').map(Number)
+  let orient = 'square'
+  if (a > b) orient = 'horizontal landscape'
+  else if (a < b) orient = 'vertical portrait'
+  return (
+    `\n\n[Output requirements] Generate the image in ${orient} orientation, ` +
+    `aspect ratio ${ratio} (target dimensions ${size} pixels). ` +
+    `The composition MUST fill this frame; do not output a square or any other aspect ratio. ` +
+    `严格按 ${ratio} 比例输出，不要输出方图或其他比例。`
+  )
 }
 
 function loadCfg() {
@@ -124,6 +200,7 @@ function makeSession({
     mask: null,
     selection: null,
     batchItems: [],
+    assetItems: [],
     status: { msg: '', err: false },
   }
 }
@@ -131,8 +208,54 @@ function makeSession({
 function revokeSession(s) {
   for (const it of s.editItems) URL.revokeObjectURL(it.url)
   for (const it of s.batchItems) URL.revokeObjectURL(it.url)
+  for (const it of s.assetItems) URL.revokeObjectURL(it.url)
   if (s.mask?.url) URL.revokeObjectURL(s.mask.url)
 }
+
+const ASSET_LIMIT = 25
+
+async function expandAssetItems(items) {
+  const out = []
+  for (const it of items) {
+    if (it.kind !== 'zip') {
+      out.push(it.file)
+      continue
+    }
+    const { default: JSZip } = await import('jszip')
+    const zip = await JSZip.loadAsync(it.file)
+    const entries = []
+    zip.forEach((path, entry) => {
+      if (entry.dir) return
+      const name = path.split('/').pop() || ''
+      if (path.startsWith('__MACOSX/') || name.startsWith('._') || name === '.DS_Store') return
+      const m = name.match(/\.(png|jpe?g|webp)$/i)
+      if (!m) return
+      entries.push({ path, name, entry, ext: m[1].toLowerCase() })
+    })
+    entries.sort((a, b) => a.path.localeCompare(b.path))
+    for (const { entry, name, ext } of entries) {
+      const mime =
+        ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
+      const blob = await entry.async('blob')
+      out.push(new File([blob], name, { type: mime }))
+    }
+  }
+  return out.slice(0, ASSET_LIMIT)
+}
+const ASSET_FUSION_SUFFIX =
+  '\n\n[Asset usage — strict] The attached reference images are the ONLY ' +
+  'visual assets to use. Reproduce each asset faithfully (its exact shape, ' +
+  'text, colors, graphics) and integrate it naturally into the scene on ' +
+  'appropriate surfaces — printed signs, posters, screens, packaging, fabric, ' +
+  'walls — with believable lighting, shadow, perspective, and surrounding ' +
+  'materials.\n' +
+  'DO NOT invent, add, or hallucinate any visual elements that are not ' +
+  'present in the attached assets. In particular, DO NOT add QR codes, ' +
+  'barcodes, logos, brand marks, watermarks, or text unless they actually ' +
+  'appear in the provided assets. If the assets do not contain a QR code, ' +
+  'the output MUST NOT contain a QR code.\n' +
+  '严格只使用附图中的素材，禁止凭空添加二维码、条形码、logo、文字、水印等附图里没有的元素。' +
+  '附图里没有二维码，输出就不能出现二维码。'
 
 export default function App() {
   const cfg = loadCfg()
@@ -259,6 +382,10 @@ export default function App() {
             model: r.model,
             kind: r.kind || 'generate',
             createdAt: r.createdAt,
+            durationMs: r.durationMs ?? null,
+            actualW: r.actualW ?? null,
+            actualH: r.actualH ?? null,
+            bytes: r.blob?.size ?? null,
           }
         })
         setImages(mapped)
@@ -388,6 +515,10 @@ export default function App() {
           model: r.model,
           kind: r.kind || 'generate',
           createdAt: r.createdAt,
+          durationMs: r.durationMs ?? null,
+          actualW: r.actualW ?? null,
+          actualH: r.actualH ?? null,
+          bytes: r.blob?.size ?? null,
         }
       })
     )
@@ -396,7 +527,16 @@ export default function App() {
 
   async function consumeImageResponse(
     resp,
-    { sid, promptText, size, kind = 'generate', originBlob = null, modelUsed, qualityUsed }
+    {
+      sid,
+      promptText,
+      size,
+      kind = 'generate',
+      originBlob = null,
+      modelUsed,
+      qualityUsed,
+      startedAt = null,
+    }
   ) {
     const text = await resp.text()
     let data
@@ -430,8 +570,25 @@ export default function App() {
       setSessionStatus(sid, { msg, err: true })
       return { count: 0, errorMsg: msg }
     }
+    const durationMs = startedAt != null ? Date.now() - startedAt : null
     for (const blob of blobs) {
-      await addImage({ blob, prompt: promptText, size, model: modelUsed, kind, originBlob })
+      const actual = await readBlobSize(blob)
+      if (actual && size && `${actual.w}x${actual.h}` !== size) {
+        console.warn(
+          `[size-mismatch] kind=${kind} requested=${size} actual=${actual.w}x${actual.h}`
+        )
+      }
+      await addImage({
+        blob,
+        prompt: promptText,
+        size,
+        model: modelUsed,
+        kind,
+        originBlob,
+        durationMs,
+        actualW: actual?.w ?? null,
+        actualH: actual?.h ?? null,
+      })
     }
     await refreshGallery()
     return { count: blobs.length, errorMsg: '' }
@@ -448,11 +605,14 @@ export default function App() {
     if (!key) return setSessionStatus(sid, { msg: '请填写 API Key', err: true })
     if (!p) return setSessionStatus(sid, { msg: '请填写提示词', err: true })
 
-    if (checkForbidden(p)) {
-      return setSessionStatus(sid, {
-        msg: '提示词不符合使用规范,已拒绝生成',
-        err: true,
-      })
+    {
+      const hit = findForbidden(p)
+      if (hit) {
+        return setSessionStatus(sid, {
+          msg: `提示词中的「${hit}」未通过审核`,
+          err: true,
+        })
+      }
     }
 
     const size = computeSize(s.ratio, s.quality)
@@ -462,10 +622,11 @@ export default function App() {
     setSessionStatus(sid, { msg: '已提交,生成中…', err: false })
     const controller = new AbortController()
     const pkey = pushPending(
-      { sid, kind: 'generate', prompt: p, label: '生成中' },
+      { sid, kind: 'generate', prompt: p, label: '生成中', ratio: s.ratio },
       controller
     )
 
+    const startedAt = Date.now()
     try {
       const resp = await fetch(`${url}/v1/images/generations`, {
         method: 'POST',
@@ -473,7 +634,12 @@ export default function App() {
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ model: modelUsed, prompt: p, size, n: 1 }),
+        body: JSON.stringify({
+          model: modelUsed,
+          prompt: p + buildSizeHint(s.ratio, size),
+          size,
+          n: 1,
+        }),
         signal: controller.signal,
       })
       const { count, errorMsg } = await consumeImageResponse(resp, {
@@ -483,6 +649,7 @@ export default function App() {
         kind: 'generate',
         modelUsed,
         qualityUsed,
+        startedAt,
       })
       if (count > 0) {
         setSessionStatus(sid, { msg: `已生成 ${count} 张`, err: false })
@@ -515,11 +682,14 @@ export default function App() {
     if (!s.editItems.length)
       return setSessionStatus(sid, { msg: '请上传至少 1 张待编辑图片', err: true })
 
-    if (checkForbidden(p)) {
-      return setSessionStatus(sid, {
-        msg: '提示词不符合使用规范,已拒绝生成',
-        err: true,
-      })
+    {
+      const hit = findForbidden(p)
+      if (hit) {
+        return setSessionStatus(sid, {
+          msg: `提示词中的「${hit}」未通过审核`,
+          err: true,
+        })
+      }
     }
 
     const size = computeSize(s.ratio, s.quality)
@@ -534,14 +704,15 @@ export default function App() {
     const previewUrl = originBlob ? URL.createObjectURL(originBlob) : null
     const controller = new AbortController()
     const pkey = pushPending(
-      { sid, kind: 'edit', prompt: p, label: '编辑中', previewUrl },
+      { sid, kind: 'edit', prompt: p, label: '编辑中', previewUrl, ratio: s.ratio },
       controller
     )
 
+    const startedAt = Date.now()
     try {
       const fd = new FormData()
       fd.append('model', modelUsed)
-      fd.append('prompt', p)
+      fd.append('prompt', p + buildSizeHint(s.ratio, size))
       fd.append('size', size)
       fd.append('n', '1')
       fd.append('response_format', 'b64_json')
@@ -562,6 +733,7 @@ export default function App() {
         originBlob,
         modelUsed,
         qualityUsed,
+        startedAt,
       })
       if (count > 0) {
         setSessionStatus(sid, { msg: `已生成 ${count} 张`, err: false })
@@ -597,11 +769,14 @@ export default function App() {
     if (!s.batchItems.length)
       return setSessionStatus(sid, { msg: '请上传至少 1 张图片', err: true })
 
-    if (checkForbidden(p)) {
-      return setSessionStatus(sid, {
-        msg: '提示词不符合使用规范,已拒绝生成',
-        err: true,
-      })
+    {
+      const hit = findForbidden(p)
+      if (hit) {
+        return setSessionStatus(sid, {
+          msg: `提示词中的「${hit}」未通过审核`,
+          err: true,
+        })
+      }
     }
 
     const size = computeSize(s.ratio, s.quality)
@@ -620,6 +795,7 @@ export default function App() {
         kind: 'batch',
         prompt: p,
         label: `批量 0/${files.length}`,
+        ratio: s.ratio,
       },
       controller
     )
@@ -635,10 +811,11 @@ export default function App() {
         err: false,
       })
       patchPending(pkey, { label: `批量 ${i + 1}/${files.length}` })
+      const startedAt = Date.now()
       try {
         const fd = new FormData()
         fd.append('model', modelUsed)
-        fd.append('prompt', p)
+        fd.append('prompt', p + buildSizeHint(s.ratio, size))
         fd.append('size', size)
         fd.append('n', '1')
         fd.append('response_format', 'b64_json')
@@ -658,6 +835,7 @@ export default function App() {
           originBlob: file,
           modelUsed,
           qualityUsed,
+          startedAt,
         })
         if (count > 0) success++
         else {
@@ -687,10 +865,110 @@ export default function App() {
     }
   }
 
+  async function onAssetGen(sid) {
+    const url = baseUrl.trim().replace(/\/+$/, '')
+    const key = apiKey.trim()
+    const s = sessionsRef.current.find((x) => x.id === sid)
+    if (!s) return
+    const p = s.prompt.trim()
+
+    if (!url) return setSessionStatus(sid, { msg: '请填写 Base URL', err: true })
+    if (!key) return setSessionStatus(sid, { msg: '请填写 API Key', err: true })
+    if (!p) return setSessionStatus(sid, { msg: '请填写场景描述', err: true })
+    if (!s.assetItems.length)
+      return setSessionStatus(sid, { msg: '请上传至少 1 张素材', err: true })
+
+    {
+      const hit = findForbidden(p)
+      if (hit) {
+        return setSessionStatus(sid, {
+          msg: `提示词中的「${hit}」未通过审核`,
+          err: true,
+        })
+      }
+    }
+
+    const size = computeSize(s.ratio, s.quality)
+    const modelUsed = s.model
+    const qualityUsed = s.quality
+
+    setSessionStatus(sid, { msg: '已提交,生成中…', err: false })
+    const firstImg = s.assetItems.find((it) => it.kind !== 'zip')
+    const previewUrl = firstImg ? URL.createObjectURL(firstImg.file) : null
+    const controller = new AbortController()
+    const pkey = pushPending(
+      { sid, kind: 'asset-gen', prompt: p, label: '素材生图中', previewUrl, ratio: s.ratio },
+      controller
+    )
+
+    const startedAt = Date.now()
+    try {
+      let expanded
+      try {
+        expanded = await expandAssetItems(s.assetItems)
+      } catch (err) {
+        const msg = `素材展开失败: ${err.message}`
+        setSessionStatus(sid, { msg, err: true })
+        failPending(pkey, msg)
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+        return
+      }
+      if (!expanded.length) {
+        const msg = 'ZIP 中未找到 PNG / JPG / WebP'
+        setSessionStatus(sid, { msg, err: true })
+        failPending(pkey, msg)
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+        return
+      }
+
+      const fd = new FormData()
+      fd.append('model', modelUsed)
+      fd.append('prompt', p + ASSET_FUSION_SUFFIX + buildSizeHint(s.ratio, size))
+      fd.append('size', size)
+      fd.append('n', '1')
+      fd.append('response_format', 'b64_json')
+      for (const f of expanded) fd.append('image', f, f.name)
+
+      const resp = await fetch(`${url}/v1/images/edits`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}` },
+        body: fd,
+        signal: controller.signal,
+      })
+      const { count, errorMsg } = await consumeImageResponse(resp, {
+        sid,
+        promptText: p,
+        size,
+        kind: 'asset-gen',
+        modelUsed,
+        qualityUsed,
+        startedAt,
+      })
+      if (count > 0) {
+        setSessionStatus(sid, { msg: `已生成 ${count} 张`, err: false })
+        popPending(pkey)
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+      } else {
+        failPending(pkey, errorMsg || '未知错误')
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setSessionStatus(sid, { msg: '已取消', err: false })
+        popPending(pkey)
+        if (previewUrl) URL.revokeObjectURL(previewUrl)
+      } else {
+        const msg = `请求失败:${e.message}`
+        setSessionStatus(sid, { msg, err: true })
+        failPending(pkey, msg)
+      }
+    }
+  }
+
   function onSubmitActive() {
     if (!active) return
     if (active.mode === 'edit') onEdit(active.id)
     else if (active.mode === 'batch') onBatch(active.id)
+    else if (active.mode === 'assetGen') onAssetGen(active.id)
     else onGenerate(active.id)
   }
 
@@ -987,6 +1265,70 @@ export default function App() {
     })
   }
 
+  function onPickAssetFiles(e) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    const room = ASSET_LIMIT - active.assetItems.length
+    if (room <= 0) {
+      setSessionStatus(active.id, {
+        msg: `素材数量已达上限 ${ASSET_LIMIT}`,
+        err: true,
+      })
+      e.target.value = ''
+      return
+    }
+    const picked = files.slice(0, room).map((f) => ({
+      file: f,
+      url: URL.createObjectURL(f),
+      name: f.name,
+    }))
+    updateActive((cur) => ({ ...cur, assetItems: [...cur.assetItems, ...picked] }))
+    e.target.value = ''
+    if (files.length > room) {
+      setSessionStatus(active.id, {
+        msg: `仅添加了前 ${room} 张，已达上限 ${ASSET_LIMIT}`,
+        err: false,
+      })
+    }
+  }
+
+  async function onPickAssetZip(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    const sid = active.id
+
+    if (active.assetItems.length >= ASSET_LIMIT) {
+      setSessionStatus(sid, { msg: `素材数量已达上限 ${ASSET_LIMIT}`, err: true })
+      return
+    }
+
+    const item = {
+      file,
+      url: URL.createObjectURL(file),
+      name: file.name,
+      kind: 'zip',
+    }
+    updateActive((cur) => ({ ...cur, assetItems: [...cur.assetItems, item] }))
+    setSessionStatus(sid, { msg: `已添加 ZIP: ${file.name}`, err: false })
+  }
+
+  function onRemoveAsset(idx) {
+    updateActive((cur) => {
+      const removed = cur.assetItems[idx]
+      if (removed) URL.revokeObjectURL(removed.url)
+      return { ...cur, assetItems: cur.assetItems.filter((_, i) => i !== idx) }
+    })
+  }
+
+  function onClearAllAssets() {
+    updateActive((cur) => {
+      for (const it of cur.assetItems) URL.revokeObjectURL(it.url)
+      return { ...cur, assetItems: [] }
+    })
+  }
+
   const currentSize = active ? computeSize(active.ratio, active.quality) : ''
   const activeBusy = active ? isSessionBusy(active.id) : false
   const activePendingCount = active
@@ -1099,6 +1441,15 @@ export default function App() {
             onClick={() => updateActive({ mode: 'batch' })}
           >
             批量风格化
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active.mode === 'assetGen'}
+            className={`tab${active.mode === 'assetGen' ? ' active' : ''}`}
+            onClick={() => updateActive({ mode: 'assetGen' })}
+          >
+            素材生图
           </button>
         </div>
 
@@ -1374,13 +1725,102 @@ export default function App() {
           </div>
         )}
 
+        {active.mode === 'assetGen' && (
+          <div className="edit-pane">
+            <div className="field">
+              <div className="edit-pane-head">
+                <label htmlFor="assetFiles">
+                  素材（logo / 二维码 / 品牌元素，最多 {ASSET_LIMIT} 张）
+                </label>
+                <div className="edit-pane-actions">
+                  <label htmlFor="assetFiles" className="btn-ghost">
+                    {active.assetItems.length ? '继续添加' : '选择素材(可多选)'}
+                  </label>
+                  <label htmlFor="assetZip" className="btn-ghost">
+                    上传 ZIP
+                  </label>
+                  {active.assetItems.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-ghost danger"
+                      onClick={onClearAllAssets}
+                    >
+                      全部清除
+                    </button>
+                  )}
+                  <input
+                    id="assetFiles"
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                    multiple
+                    onChange={onPickAssetFiles}
+                    style={{ display: 'none' }}
+                  />
+                  <input
+                    id="assetZip"
+                    type="file"
+                    accept=".zip,application/zip,application/x-zip-compressed"
+                    onChange={onPickAssetZip}
+                    style={{ display: 'none' }}
+                  />
+                </div>
+              </div>
+
+              {active.assetItems.length === 0 ? (
+                <label htmlFor="assetFiles" className="upload-drop">
+                  <div className="upload-icon">＋</div>
+                  <div>
+                    上传素材（PNG / JPG / WebP，PNG 透明底融合更自然）；也支持 <strong>上传 ZIP</strong>，ZIP 会作为单个文件原样发送给模型（用于兼容性测试，不会自动解压）。模型会根据 prompt 自行决定每个素材出现的位置。
+                  </div>
+                </label>
+              ) : (
+                <>
+                  <div className="asset-thumbs">
+                    {active.assetItems.map((it, i) => (
+                      <div key={it.url} className="asset-thumb" title={it.name}>
+                        {it.kind === 'zip' ? (
+                          <div className="asset-file-card">
+                            <div className="asset-file-icon">ZIP</div>
+                            <div className="asset-file-name" title={it.name}>
+                              {it.name}
+                            </div>
+                            <div className="asset-file-size">
+                              {fmtBytes(it.file.size)}
+                            </div>
+                          </div>
+                        ) : (
+                          <img src={it.url} alt={it.name} />
+                        )}
+                        <button
+                          type="button"
+                          className="thumb-del"
+                          title="移除"
+                          onClick={() => onRemoveAsset(i)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="selection-tip">
+                    将把 {active.assetItems.length} 张素材作为参考图一起送给模型，让它读图后自己决定融入位置。
+                    注意：模型会"重画"参考图，二维码大概率扫不通；如果需要 QR 必扫，告诉我加后期合成。
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="field">
           <label htmlFor="prompt">
             {active.mode === 'edit'
               ? '编辑指令'
               : active.mode === 'batch'
                 ? '风格指令'
-                : '提示词'}
+                : active.mode === 'assetGen'
+                  ? '场景描述'
+                  : '提示词'}
           </label>
           <textarea
             id="prompt"
@@ -1392,7 +1832,9 @@ export default function App() {
                 ? '例如:把背景改成日落海边,保持主体不变…(Ctrl+Enter 快速提交)'
                 : active.mode === 'batch'
                   ? '例如:把所有图片转成水彩画风格,温暖色调,保留各自主体…(Ctrl+Enter 快速提交)'
-                  : '例如:一只橘猫坐在窗台上,黄昏柔光,电影质感…(Ctrl+Enter 快速提交)'
+                  : active.mode === 'assetGen'
+                    ? '例如:咖啡馆橱窗角落,黄昏暖光,木质桌面…(模型会把上面的素材融入这个场景)'
+                    : '例如:一只橘猫坐在窗台上,黄昏柔光,电影质感…(Ctrl+Enter 快速提交)'
             }
           />
         </div>
@@ -1421,7 +1863,7 @@ export default function App() {
             >
               {QUALITIES.map((q) => (
                 <option key={q.value} value={q.value}>
-                  {q.label}
+                  {DEV && q.devNote ? `${q.label} (${q.devNote})` : q.label}
                 </option>
               ))}
             </select>
@@ -1438,10 +1880,12 @@ export default function App() {
               onChange={(e) => updateActive({ model: e.target.value })}
             />
           </div>
-          <div className="field">
-            <label>最终尺寸</label>
-            <div className="size-preview">{currentSize}</div>
-          </div>
+          {DEV && (
+            <div className="field">
+              <label>最终尺寸 (dev)</label>
+              <div className="size-preview">{currentSize}</div>
+            </div>
+          )}
         </div>
 
         <div className="actions">
@@ -1548,7 +1992,14 @@ export default function App() {
                 >
                   ×
                 </button>
-                <div className="pending-stage">
+                <div
+                  className="pending-stage"
+                  style={
+                    p.ratio
+                      ? { aspectRatio: p.ratio.replace(':', ' / ') }
+                      : undefined
+                  }
+                >
                   {p.previewUrl ? (
                     <>
                       <img src={p.previewUrl} alt="原图" />
@@ -1668,6 +2119,48 @@ export default function App() {
                 />
               )}
               <div className="meta">
+                <div className="meta-time">
+                  <span title={new Date(img.createdAt).toLocaleString()}>
+                    {fmtTime(img.createdAt)}
+                  </span>
+                  {img.durationMs != null && (
+                    <>
+                      <span className="dot">·</span>
+                      <span>用时 {fmtDuration(img.durationMs)}</span>
+                    </>
+                  )}
+                  {DEV && (img.actualW || img.size) && (
+                    <>
+                      <span className="dot">·</span>
+                      {(() => {
+                        const reqStr = img.size || ''
+                        const actStr =
+                          img.actualW && img.actualH
+                            ? `${img.actualW}x${img.actualH}`
+                            : ''
+                        if (actStr && reqStr && actStr !== reqStr) {
+                          return (
+                            <span
+                              className="size-mismatch"
+                              title={`请求 ${reqStr}，实际 ${actStr}`}
+                            >
+                              {actStr} <span className="dim">({reqStr})</span>
+                            </span>
+                          )
+                        }
+                        return <span>{actStr || reqStr}</span>
+                      })()}
+                    </>
+                  )}
+                  {img.bytes != null && (
+                    <>
+                      <span className="dot">·</span>
+                      <span title={`${img.bytes.toLocaleString()} bytes`}>
+                        {fmtBytes(img.bytes)}
+                      </span>
+                    </>
+                  )}
+                </div>
                 <span className="prompt-hint" title={img.prompt}>
                   {img.prompt}
                 </span>

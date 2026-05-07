@@ -9,7 +9,7 @@ const FORBIDDEN = [
   '射精', '精液', '口交', '肛交', '口爆', '内射', '颜射',
   '调教', '轮奸', '强奸', '强暴', '猥亵', '性侵', '迷奸',
   '小穴', '骚穴', '肉穴', '抽插', '插入', '打桩', '后入',
-  '自慰', '手淫', '飞机', '撸管', '高潮', '爽', '呻吟',
+  '自慰', '手淫', '飞机', '撸管', '高潮', '呻吟',
   '无码', '步兵', '骑兵', 'AV', '成人', '三级', '18禁', '十八禁',
   '情趣', '情色', '肉', '肉文', '福利', '福利姬', '援交', '绿帽',
   'NTR', '牛头人', '绿帽癖', '原味', '丝袜诱惑', '比基尼诱惑',
@@ -66,10 +66,14 @@ const FORBIDDEN = [
 ]
 
 export function checkForbidden(text) {
-  if (!text) return false
+  return findForbidden(text) != null
+}
+
+export function findForbidden(text) {
+  if (!text) return null
   const normalized = text.toLowerCase()
   for (const w of FORBIDDEN) {
-    if (normalized.includes(w.toLowerCase())) return true
+    if (normalized.includes(w.toLowerCase())) return w.trim()
   }
-  return false
+  return null
 }

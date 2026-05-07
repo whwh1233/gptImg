@@ -579,7 +579,7 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
 .pending-stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  min-height: 180px;
   background: #f3efe4;
   display: flex;
   align-items: center;
@@ -587,9 +587,12 @@ textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
   overflow: hidden;
 }
 .pending-stage img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
   filter: blur(2px) brightness(0.8);
 }
 .pending-overlay,
@@ -940,9 +943,7 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 }
 .ba-cell img {
   width: 100%;
-  height: 100%;
-  aspect-ratio: 1 / 1;
-  object-fit: cover;
+  height: auto;
   display: block;
   cursor: zoom-in;
   transition: transform .25s ease;
@@ -1012,11 +1013,19 @@ button.primary:disabled { opacity: .5; cursor: not-allowed; }
 .card .meta {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "time time"
+    "prompt actions";
+  column-gap: 8px;
+  row-gap: 6px;
   align-items: center;
   font-size: 12px;
 }
+.card .meta .meta-time { grid-area: time; }
+.card .meta .prompt-hint { grid-area: prompt; }
+.card .meta-actions { grid-area: actions; }
 .card .meta a {
   color: var(--accent);
   text-decoration: none;
@@ -1085,3 +1094,92 @@ details summary {
   padding: 4px 0;
 }
 details summary:hover { color: var(--text); }
+
+.asset-thumbs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.asset-thumb {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  background: repeating-conic-gradient(#cfcfcf 0% 25%, #efefef 0% 50%) 50% / 16px 16px;
+}
+.asset-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.asset-thumb .thumb-del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(44, 43, 39, .65);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.asset-thumb .thumb-del:hover { background: var(--danger); }
+
+.asset-file-card {
+  width: 100%;
+  height: 100%;
+  background: #f5f1e6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  box-sizing: border-box;
+  text-align: center;
+}
+.asset-file-icon {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fff;
+  background: var(--accent, #b85c38);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.asset-file-name {
+  font-size: 11px;
+  color: var(--fg, #2c2b27);
+  word-break: break-all;
+  line-height: 1.25;
+  max-height: 2.5em;
+  overflow: hidden;
+}
+.asset-file-size {
+  font-size: 10px;
+  color: var(--muted, #888);
+}
+
+.meta-time {
+  font-size: 11px;
+  color: var(--muted, #777);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  line-height: 1.4;
+}
+.meta-time .dot { opacity: 0.5; }
+
+.meta-time .size-mismatch { color: #d97706; }
+.meta-time .size-mismatch .dim { opacity: 0.55; font-style: italic; }

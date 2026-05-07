@@ -40,6 +40,9 @@ export async function addImage({
   model,
   kind = 'generate',
   originBlob = null,
+  durationMs = null,
+  actualW = null,
+  actualH = null,
 }) {
   const db = await openDB()
   const record = {
@@ -49,6 +52,9 @@ export async function addImage({
     model,
     kind,
     originBlob,
+    durationMs,
+    actualW,
+    actualH,
     createdAt: Date.now(),
   }
   const id = await new Promise((resolve, reject) => {
