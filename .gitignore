@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 .superpowers/
+
+# Local experiment / test asset playground (not part of the app build)
+experiments/
